@@ -16,10 +16,12 @@
   Arduino, Raspberry etc.
   --------------------------------------------------*/
 
+//#include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 
-const char* ssid = "ESP-Accesspoint";
-const char* password = "12345678";  // set to "" for open access point w/o passwortd
+const char* ssid = "ESP-FogMachine";
+const char* password = "Fog54321";  // set to "" for open access point w/o passwortd
 
 unsigned long ulReqcount;
 
@@ -28,13 +30,15 @@ unsigned long ulReqcount;
 unsigned long previousMillis = 0;        // will store last time LED was updated
 
 // constants won't change:
-const long onInterval = 10000;           // interval at which to blink (milliseconds)
-const long offInterval = 50000;           // interval at which to blink (milliseconds)
+const int ledPin = D4;
+const int relaisPin = D1;
 
 // Variables will change:
 int ledState = LOW;             // ledState used to set the LED
-
 int mode = 1;
+long onInterval = 2000;           // interval at which to blink (milliseconds)
+long offInterval = 2000;           // interval at which to blink (milliseconds)
+
 // Create an instance of the server on Port 80
 WiFiServer server(80);
 
@@ -43,9 +47,11 @@ void setup()
   // setup globals
   ulReqcount = 0;
 
-  // prepare GPIO2
-  pinMode(2, OUTPUT);
-  digitalWrite(2, 0);
+  // prepare GPIOs
+  pinMode(ledPin, OUTPUT);
+  pinMode(relaisPin, OUTPUT);
+  digitalWrite(ledPin, 0);
+  digitalWrite(relaisPin, 1);
 
   // start serial
   Serial.begin(9600);
@@ -72,7 +78,8 @@ void loop()
         ledState = HIGH;
       }
       // set the LED with the ledState of the variable:
-      digitalWrite(2, ledState);
+      digitalWrite(ledPin, ledState);
+      digitalWrite(relaisPin, !ledState);
     }
     else if (ledState == HIGH) {
       if (currentMillis - previousMillis >= offInterval) {
@@ -81,7 +88,8 @@ void loop()
         ledState = LOW;
       }
       // set the LED with the ledState of the variable:
-      digitalWrite(2, ledState);
+      digitalWrite(ledPin, ledState);
+      digitalWrite(relaisPin, !ledState);
     }
   }
 
@@ -208,14 +216,16 @@ void loop()
       {
         mode = 1;
         previousMillis = 0;
-        digitalWrite(2, 0);
+        digitalWrite(ledPin, 0);
+        digitalWrite(relaisPin, 1);
         ledState = LOW;
       }
       else if (sCmd.indexOf("FUNCTION1OFF") >= 0)
       {
         mode = 0;
         previousMillis = 0;
-        digitalWrite(2, 1);
+        digitalWrite(ledPin, 1);
+        digitalWrite(relaisPin, 0);
         ledState = LOW;
       }
     }
