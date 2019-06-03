@@ -1,22 +1,13 @@
 /*
-  This code for a WaterLevel sensor and a WaterLevel Indicator has been developed and produced by Pierre Pennings (December 2018)
-  This application can be used for various situations where information about the level of water in a reservoir tank is required
-  e.g. in automatic plant watering systems or in caravans or campers where there is no direct visibility on the water reserve in the tank.
-  The DIY WaterLevelSensor uses 6 pieces of copper electricity wire connected to a ladder network of 680K Ohm resistors
-  The DIY WaterLevel Indicator is made with 5 (Neopixel) SMD5050 LEDs with WS2812B controller chips powered with 5 V
-  Every individual LED is adressed from one ARDUINO output pin and the control adress determined by the measured WaterLevel
-  The WaterLevel is measured periodically (during only 200 mili seconds, to avoid corrosion due to electrolysis effects)
-  The WaterLevel Indicator is set to the measured water level
-  The measured WaterLevelValues are not distributed linearly but follow a second grade polynomial
-  Reference values for the measurements are stored in an Array called LEVELarray[] consisting of 6 positions
-  The actual measured WaterLevelValues are compared with the values in the Array and consquently the Water level is determined
-  For this Project, which is part of a bigger plan, an ESP 32 (NodeMCU) is used with 12 Bits ADCs, however an normal ARDUINO UNO (or almost any other model) will do the job
-  (of course the settings in the code will need to be adjusted, e.g. due to 10 Bits ADC and different Pin allocations
-  The ESP 32 device works at 3.3 Volt levels, while the WaterLevel Indicator runs on 5 V
-  The 5 Level LEDs have been built in a separate indicator Display (indicating 1%, 25%, 50%, 75% and 100% levels)
-  The ESP 32 is fed with 5 V power (from a 5V adaptor or 5v powerbank), it has an on-board 3.3V voltage regulator
-  The 5 indicator LEDs get the 5V supply directly from the 5 volt pin of the ESP 32
-
+  DIY Fog Machine
+  parts used:
+    3 e-cigarette coils
+    2 water level sensors
+    1 aquarium pump, to fille liquid from the big containmanet into the small one
+    1 relais for switching the professional fog machine off/on 
+    1 small containment, for the coils of the fog machine
+    1 big containment for the diy fog machine and the professional fog machine
+  Based on WaterLevel Sensor Indicator project by Pierre Pennings, 2018
   This code is licensed under GPL3+ license.
 */
 
@@ -25,8 +16,8 @@
 const int SensorOnPins[NUM_SENSORS] = { 8, 4 };                       // pin 27 sends a "0"  or "1" (0 -3.3 V) to the waterlevel measurement circuit
 const int LevelSensorPins[NUM_SENSORS] = { A0, A1 };                 // 12 bits ADC pin 34 senses the voltage level of the waterlevel sensor (values 0 - 4095)
 
-int WaterLevelValues[NUM_SENSORS] = { 0, 0 };                        // Variable to store the value of the Waterlevel sensor
-int level = 0;                                  // Variable of the WaterLevel
+int WaterLevelValues[NUM_SENSORS] = { 0, 0 };                        // Variable array to store the value of the Waterlevel sensor
+int levels[NUM_SENSORS] = { 0, 0 };                                         // Variable array of the WaterLevel
 
 //                      0    1    2    3    4    5
 int LEVELarray [6] = {340, 370, 430, 500, 590, 680} ; // Array with the level reference values to determine the waterlevel
@@ -35,14 +26,28 @@ int LEVELarray [6] = {340, 370, 430, 500, 590, 680} ; // Array with the level re
 
 const int PotiPin = A2;
 
+const int PumpPin = 9;
+const int RelaisPin = 10;
+
 #define NUM_HEATINGS 3
 const int HeatingPins[NUM_HEATINGS] = { 3, 5, 6 };
 int     heatValue = 0;
 
+enum eState {
+  S_HEAT_ON = 1,
+  S_PUMP_ON = 2,
+  S_RELAIS_ON = 4
+};
+
+int state = 0;
+int oldState = (S_HEAT_ON | S_PUMP_ON | S_RELAIS_ON);
+
 /////////////////////////////////////////////////// the setup code that follows, will run once after "Power On" or after a RESET
 void setup() {
   int i;
+
   Serial.begin(115200);
+  Serial.println("DIY fog machine v0.1");
 
   for (i = 0; i < NUM_SENSORS; i++) {
     pinMode(SensorOnPins[i], OUTPUT);                   // Initializes the power output pin (3.3 V) for the WaterLevel Sensor circuit
@@ -53,22 +58,69 @@ void setup() {
 
   for (i = 0; i < NUM_HEATINGS; i++) {
     pinMode(HeatingPins[i], OUTPUT);                    // Initializes the power output pin (3.3 V) for the heating circuit
-    analogWrite(HeatingPins[i], 0);                     // Set HeatingPins to LOW; this will send 0 V to the heating circuit
+    analogWrite(HeatingPins[i], 0);                     // heating circuits off
   }
+  pinMode(PumpPin, OUTPUT);                             // Initializes the water pump pin
+  digitalWrite(PumpPin, LOW);                           // water pump off
+  pinMode(RelaisPin, OUTPUT);                           // Initializes the relais pin
+  digitalWrite(RelaisPin, LOW);                         // relais off
+  state = 0;
+
 }
 
 /////////////////////////////////////////////////// the loop code that follows, will run repeatedly until "Power Off" or a RESET
 void loop() {
-int i;
+
+  int i;
+  
   for (i = 0; i < NUM_SENSORS; i++) {
     getMeasureLevel(i);
   }
   heatValue = map(analogRead(PotiPin), 0, 1024, 0, 255);
-  for (i = 0; i < NUM_HEATINGS; i++) {
-    analogWrite(HeatingPins[i], heatValue);           // make HeatingPins HIGH
+  //Serial.print(" Heat: "); Serial.println(heatValue);
+
+  if (levels[1] < 1) {              // all level sensors under minimum
+    for (i = 0; i < NUM_HEATINGS; i++) {
+      analogWrite(HeatingPins[i], 0);                // heating off
+    }
+    state &= ~S_HEAT_ON;
+    digitalWrite(PumpPin, LOW);                      // water pump off
+    state &= ~S_PUMP_ON;
   }
-  Serial.print(" Heat: "); Serial.println(heatValue);  
-  delay(1000);                            // Check for new value every 1 sec;
+  if (levels[0] >= 1 && levels[1] <= 1) {       // small level sensors under minimum
+    digitalWrite(PumpPin, HIGH);                     // water pump on
+    state |= S_PUMP_ON;
+  }
+  else if (levels[1] >= 4) { // small level sensors over maximum
+    digitalWrite(PumpPin, LOW);                     // water pump off
+    state &= ~S_PUMP_ON;
+  }
+  if (levels[0] >= 1) { // big containment sensor over minimum
+    digitalWrite(RelaisPin, HIGH);                  // relais on, secondary fog machine on
+    state |= S_RELAIS_ON;
+  }
+  else { // big containment sensor under minimum 
+    digitalWrite(RelaisPin, LOW);                   // relais off, secondary fog machine off
+    state &= ~S_RELAIS_ON;
+    digitalWrite(PumpPin, LOW);                     // water pump off
+    state &= ~S_PUMP_ON;
+  }
+  if (levels[1] >= 1) { // both level sensors over minimum
+    for (i = 0; i < NUM_HEATINGS; i++) {
+      analogWrite(HeatingPins[i], heatValue);       // heating on
+    }
+    state |= S_HEAT_ON;
+  }
+  if (state != oldState) {
+    Serial.print("Sensor 1: "); Serial.print(" = "); Serial.print(LEVELarray[levels[0]]); Serial.print("   WaterLevelValue: "); Serial.print(WaterLevelValues[0]); Serial.print("  Level: "); Serial.println(levels[0]);
+    Serial.print("Sensor 2: "); Serial.print(" = "); Serial.print(LEVELarray[levels[1]]); Serial.print("   WaterLevelValue: "); Serial.print(WaterLevelValues[1]); Serial.print("  Level: "); Serial.println(levels[1]);
+    Serial.print("Heating: "); Serial.println(heatValue);
+    if (state & S_HEAT_ON) Serial.println("Heating ON"); else Serial.println("Heating OFF");
+    if (state & S_PUMP_ON) Serial.println("Pump ON"); else Serial.println("Pump OFF");
+    if (state & S_RELAIS_ON) Serial.println("Relais ON"); else Serial.println("Relais OFF");
+    oldState = state;
+  }
+  delay(200);                            // Check for new value every 1 sec;
   //this value is just for demonstration purposes and will in a practical application be far less frequent
 }
 //////////////////END of LOOP////////////////////////////////////////////////////////////
@@ -76,7 +128,7 @@ int i;
 
 /////////////////////////////////////////////////// Hereafter follows the Function for measuring the WaterLevel (called from within the loop)
 
-void getMeasureLevel(int num)  {
+void getMeasureLevel(int num) {
   if (num < NUM_SENSORS) {
     digitalWrite(SensorOnPins[num], HIGH);           // make SenorOnPin HIGH
     delay(200);                             // allow the circuit to stabilize
@@ -86,11 +138,16 @@ void getMeasureLevel(int num)  {
     {
       if ((WaterLevelValues[num] > (LEVELarray[i] * 0.96)) && (WaterLevelValues[num] < (LEVELarray[i] * 1.04)))              // allow a margin of 4% on the measured values to eliminate jitter and noise
       {
-        level = i;
+        levels[num] = i;
       }
     }
+    if (WaterLevelValues[num] == 0) {
+        levels[num] = 0;
+    }
+    
     digitalWrite(SensorOnPins[num], LOW);           // make SenorOnPin LOW
-    Serial.print(" Sensor: "); Serial.print(num+1); Serial.print(" = "); Serial.print(LEVELarray[level]); Serial.print("   WaterLevelValue: "); Serial.print(WaterLevelValues[num]); Serial.print("  Level: "); Serial.println(level);
+    //Serial.print(" Sensor: "); Serial.print(num + 1); Serial.print(" = "); Serial.print(LEVELarray[levels[num]]); Serial.print("   WaterLevelValue: "); Serial.print(WaterLevelValues[num]); Serial.print("  Level: "); Serial.println(levels[num]);
     // uncomment this code for determining the values to be put in the LEVELarray [] using the serial plotter and/or serial monitor or the ARDUINO IDE
+    //Serial.println(levels[num]);
   }
 }
