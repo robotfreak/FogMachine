@@ -11,6 +11,7 @@
   This code is licensed under GPL3+ license.
 */
 
+//#define _DEBUG
 ///////////////////////////////////////////////// initialise the GPIO pins
 #define NUM_SENSORS 2
 const int SensorOnPins[NUM_SENSORS] = { 8, 4 };                       // pin 27 sends a "0"  or "1" (0 -3.3 V) to the waterlevel measurement circuit
@@ -20,7 +21,7 @@ int WaterLevelValues[NUM_SENSORS] = { 0, 0 };                        // Variable
 int levels[NUM_SENSORS] = { 0, 0 };                                         // Variable array of the WaterLevel
 
 //                      0    1    2    3    4    5
-int LEVELarray [6] = {340, 370, 430, 500, 590, 680} ; // Array with the level reference values to determine the waterlevel
+int LEVELarray [6] = {340, 380, 430, 480, 530, 580} ; // Array with the level reference values to determine the waterlevel
 // the "0" level is applicable when there is no water in the reservoir
 // the "5" level is applicable when the reservoir is full
 
@@ -76,6 +77,11 @@ void loop() {
   for (i = 0; i < NUM_SENSORS; i++) {
     getMeasureLevel(i);
   }
+#ifdef _DEBUG
+  Serial.print(WaterLevelValues[0]);
+  Serial.print(",");
+  Serial.println(levels[0]);
+#endif
   heatValue = map(analogRead(PotiPin), 0, 1024, 0, 255);
   //Serial.print(" Heat: "); Serial.println(heatValue);
 
@@ -91,7 +97,7 @@ void loop() {
     digitalWrite(PumpPin, HIGH);                     // water pump on
     state |= S_PUMP_ON;
   }
-  else if (levels[1] >= 4) { // small level sensors over maximum
+  else if (levels[1] >= 3) { // small level sensors over maximum
     digitalWrite(PumpPin, LOW);                     // water pump off
     state &= ~S_PUMP_ON;
   }
@@ -112,12 +118,14 @@ void loop() {
     state |= S_HEAT_ON;
   }
   if (state != oldState) {
+  #ifndef _DEBUG
     Serial.print("Sensor 1: "); Serial.print(" = "); Serial.print(LEVELarray[levels[0]]); Serial.print("   WaterLevelValue: "); Serial.print(WaterLevelValues[0]); Serial.print("  Level: "); Serial.println(levels[0]);
     Serial.print("Sensor 2: "); Serial.print(" = "); Serial.print(LEVELarray[levels[1]]); Serial.print("   WaterLevelValue: "); Serial.print(WaterLevelValues[1]); Serial.print("  Level: "); Serial.println(levels[1]);
     Serial.print("Heating: "); Serial.println(heatValue);
     if (state & S_HEAT_ON) Serial.println("Heating ON"); else Serial.println("Heating OFF");
     if (state & S_PUMP_ON) Serial.println("Pump ON"); else Serial.println("Pump OFF");
     if (state & S_RELAIS_ON) Serial.println("Relais ON"); else Serial.println("Relais OFF");
+  #endif
     oldState = state;
   }
   delay(200);                            // Check for new value every 1 sec;
@@ -129,6 +137,7 @@ void loop() {
 /////////////////////////////////////////////////// Hereafter follows the Function for measuring the WaterLevel (called from within the loop)
 
 void getMeasureLevel(int num) {
+  boolean inRange = false;
   if (num < NUM_SENSORS) {
     digitalWrite(SensorOnPins[num], HIGH);           // make SenorOnPin HIGH
     delay(200);                             // allow the circuit to stabilize
@@ -136,12 +145,13 @@ void getMeasureLevel(int num) {
 
     for (int i = 0; i < 6 ; i++)
     {
-      if ((WaterLevelValues[num] > (LEVELarray[i] * 0.96)) && (WaterLevelValues[num] < (LEVELarray[i] * 1.04)))              // allow a margin of 4% on the measured values to eliminate jitter and noise
+      if ((WaterLevelValues[num] > (LEVELarray[i] * 0.95)) && (WaterLevelValues[num] < (LEVELarray[i] * 1.05)))              // allow a margin of 4% on the measured values to eliminate jitter and noise
       {
         levels[num] = i;
+        inRange = true;
       }
     }
-    if (WaterLevelValues[num] == 0) {
+    if (inRange == false) {
         levels[num] = 0;
     }
     
