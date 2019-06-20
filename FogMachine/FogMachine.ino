@@ -93,7 +93,7 @@ void loop() {
     digitalWrite(PumpPin, LOW);                      // water pump off
     state &= ~S_PUMP_ON;
   }
-  if (levels[0] >= 1 && levels[1] <= 1) {       // small level sensors under minimum
+  if (levels[0] >= 2 && levels[1] <= 1) {       // small level sensors under minimum
     digitalWrite(PumpPin, HIGH);                     // water pump on
     state |= S_PUMP_ON;
   }
@@ -101,7 +101,7 @@ void loop() {
     digitalWrite(PumpPin, LOW);                     // water pump off
     state &= ~S_PUMP_ON;
   }
-  if (levels[0] >= 1) { // big containment sensor over minimum
+  if (levels[0] >= 2) { // big containment sensor over minimum
     digitalWrite(RelaisPin, HIGH);                  // relais on, secondary fog machine on
     state |= S_RELAIS_ON;
   }
